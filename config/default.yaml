@@ -1,0 +1,23 @@
+# Configuration for eFX Lab simulation
+
+# Reporting currency for P&L calculation
+reporting_currency: USD
+
+# Input event files
+inputs:
+  directory: examples/data
+  files:
+    market_update: market_updates.parquet
+    client_trade: client_trades.parquet
+    clock_tick: clock_ticks.parquet
+    # Optional files:
+    # config_update: config_updates.parquet
+    # hedge_order: hedge_orders.parquet
+    # hedge_fill: hedge_fills.parquet
+
+# Output files
+outputs:
+  directory: outputs
+  audit_log: audit_log.jsonl
+  snapshots: snapshots.parquet
+  final_state: final_state.json
