@@ -17,6 +17,7 @@ from efxlab.io_layer import (
     write_state_snapshot,
 )
 from efxlab.logging_config import configure_logging
+from efxlab.lot_manager import LotConfig, LotManager
 from efxlab.processor import EventProcessor
 from efxlab.state import EngineState
 
@@ -71,7 +72,30 @@ def run(config: Path, log_level: str) -> None:
 
     # Initialize state
     reporting_currency = config_data.get("reporting_currency", "USD")
-    initial_state = EngineState(reporting_currency=reporting_currency)
+
+    # Initialize lot tracking if enabled
+    lot_manager = None
+    if config_data.get("lot_tracking", {}).get("enabled", False):
+        lot_config_data = config_data["lot_tracking"]
+        lot_config = LotConfig(
+            enabled=lot_config_data.get("enabled", True),
+            matching_rule=lot_config_data.get("matching_rule", "FIFO"),
+            risk_pairs=lot_config_data.get("risk_pairs", []),
+            trade_pairs=lot_config_data.get("trade_pairs", []),
+            hedge_pairs=lot_config_data.get("hedge_pairs", []),
+            reporting_currency=reporting_currency,
+        )
+        lot_manager = LotManager(lot_config)
+        logger.info(
+            "lot_tracking_enabled",
+            risk_pairs=lot_config.risk_pairs,
+            matching_rule=lot_config.matching_rule,
+        )
+
+    initial_state = EngineState(
+        reporting_currency=reporting_currency,
+        lot_manager=lot_manager,
+    )
 
     # Process events
     processor = EventProcessor(initial_state)
@@ -109,6 +133,17 @@ def run(config: Path, log_level: str) -> None:
     click.echo(f"\nPositions:")
     for pair, position in sorted(final_state.positions.items()):
         click.echo(f"  {pair}: {position}")
+
+    # Lot tracking summary
+    if final_state.lot_manager:
+        stats = final_state.lot_manager.get_lot_count_stats()
+        click.echo(f"\nLot Tracking:")
+        click.echo(f"  Total open lots: {stats['total_open_lots']}")
+        click.echo(f"  Total closed lots: {stats['total_closed_lots']}")
+        for pair, counts in stats["queues"].items():
+            if counts["open"] > 0 or counts["closed"] > 0:
+                click.echo(f"  {pair}: {counts['open']} open, {counts['closed']} closed")
+
     click.echo(f"\nOutputs written to: {output_dir}")
     click.echo(f"  - Audit log: {audit_log_path.name}")
     click.echo(f"  - Snapshots: {snapshots_path.name}")

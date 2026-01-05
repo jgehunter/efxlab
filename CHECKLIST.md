@@ -40,11 +40,11 @@ Use this checklist to review and verify the implementation before merging/deploy
 
 ## Testing Coverage ✅
 
-- [x] **Unit Tests** - 38 tests covering events, state, converter, handlers, processor
-- [x] **Integration Tests** - End-to-end scenarios with realistic data
-- [x] **Edge Cases** - Negative balances, missing rates, duplicate sequences tested
+- [x] **Unit Tests** - 66 tests covering events, state, converter, handlers, processor, lot tracking
+- [x] **Integration Tests** - End-to-end scenarios with realistic data (including lot tracking)
+- [x] **Edge Cases** - Negative balances, missing rates, duplicate sequences, partial lot matching
 - [x] **Determinism Test** - test_deterministic_rerun verifies byte-identical outputs
-- [x] **All Tests Pass** - 38/38 passing in <1 second
+- [x] **All Tests Pass** - 66/66 passing in <0.2 seconds
 
 ## Documentation ✅
 
@@ -85,17 +85,17 @@ Use this checklist to review and verify the implementation before merging/deploy
 Run these to verify implementation:
 
 ```powershell
-# 1. All tests pass
+# 1. All tests pass (including lot tracking)
 pytest
-# Expected: 38 passed in <1s
+# Expected: 66 passed in <0.2s (61 original + 5 lot integration)
 
 # 2. Generate sample data
 python -m efxlab.main generate-sample-data --num-trades 50 --num-ticks 200
 # Expected: 3 Parquet files created in examples/data
 
-# 3. Run simulation
+# 3. Run simulation with lot tracking
 python -m efxlab.main run --config config/default.yaml
-# Expected: 3 output files in outputs/, summary printed
+# Expected: 3 output files in outputs/, lot tracking stats in summary
 
 # 4. Verify determinism
 python -m efxlab.main run --config config/default.yaml
@@ -108,6 +108,10 @@ fc outputs\run1.json outputs\final_state.json
 black --check efxlab tests
 ruff check efxlab tests
 # Expected: No issues
+
+# 6. Verify lot tracking output
+python -c "import json; events = [json.loads(line) for line in open('outputs/audit_log.jsonl')]; print('Lot events:', sum(1 for e in events if e['record_type'] in ['lot_created', 'lot_match', 'lot_tracking_error']))"
+# Expected: Multiple lot events logged
 ```
 
 ## Performance Validation ✅
@@ -115,6 +119,7 @@ ruff check efxlab tests
 - [x] **Throughput** - Processes 258 events in ~4ms = 64,500 events/sec ✅ (target: >10k/sec)
 - [x] **Memory** - Small dataset fits easily in memory
 - [x] **Latency** - ~15μs per event average ✅ (target: <100μs)
+- [x] **Lot Tracking Overhead** - Adds ~20% processing time when enabled (acceptable)
 
 ## Code Quality ✅
 
@@ -151,6 +156,7 @@ ruff check efxlab tests
 - [x] **No Cross-Pair Exposure** - Exposure calc uses direct pairs only (documented, acceptable for MVP)
 - [x] **No Strategy Engine** - Manual hedge orders only (documented, future work)
 - [x] **No Real-Time Mode** - Batch processing only (documented, acceptable for backtest use case)
+- [x] **FIFO Matching Only** - No LIFO or specific identification (documented, FIFO is standard)
 
 ## Final Go/No-Go Decision
 

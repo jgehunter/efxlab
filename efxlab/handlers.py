@@ -4,12 +4,13 @@ Event handlers - pure functions that transform state.
 Each handler takes (State, Event) and returns (State, OutputRecords).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Dict, List
 
 from efxlab.converter import CurrencyConverter
+from efxlab.decomposition import TradeDecomposer
 from efxlab.events import (
     ClientTradeEvent,
     ClockTickEvent,
@@ -40,11 +41,13 @@ def handle_client_trade(
     Updates:
     - Cash balances (desk perspective)
     - Positions
+    - Lot tracking (if enabled)
 
     Outputs:
     - Trade log record
+    - Lot creation/matching records (if lot tracking enabled)
     """
-    # Apply trade
+    # Apply trade to cash and positions
     new_state = apply_trade(
         state,
         event.currency_pair,
@@ -54,11 +57,13 @@ def handle_client_trade(
     )
     new_state = new_state.increment_event_count(event.timestamp.isoformat())
 
-    # Create output record
+    # Base output record
     base_ccy, quote_ccy = event.currency_pair.split("/")
     quote_amount = event.notional * event.price
 
-    output = OutputRecord(
+    outputs: List[OutputRecord] = []
+
+    trade_output = OutputRecord(
         timestamp=event.timestamp,
         record_type="client_trade",
         data={
@@ -73,8 +78,190 @@ def handle_client_trade(
             "quote_currency": quote_ccy,
         },
     )
+    outputs.append(trade_output)
 
-    return new_state, [output]
+    # Lot tracking integration
+    if new_state.lot_manager is not None:
+        lot_outputs = _handle_lot_tracking(new_state, event)
+        outputs.extend(lot_outputs)
+
+    return new_state, outputs
+
+
+def _handle_lot_tracking(state: EngineState, event: ClientTradeEvent) -> List[OutputRecord]:
+    """
+    Handle lot creation and matching for a client trade.
+
+    Strategy:
+    - Decompose trade into risk pair legs
+    - For each leg, check if it reduces or increases net position
+    - If reduces: match against existing opposite lots (internalization)
+    - If increases: create new lot
+
+    Returns list of output records for lot operations.
+    """
+    outputs: List[OutputRecord] = []
+
+    if not state.lot_manager:
+        return outputs
+
+    # Decompose trade into risk pair legs
+    converter = CurrencyConverter(state)
+    decomposer = TradeDecomposer(converter, state.reporting_currency)
+
+    try:
+        legs = decomposer.decompose(
+            event.currency_pair,
+            event.side,
+            event.notional,
+            event.price,
+        )
+    except ValueError as e:
+        # If decomposition fails (missing market rate), log and skip
+        outputs.append(
+            OutputRecord(
+                timestamp=event.timestamp,
+                record_type="lot_tracking_error",
+                data={
+                    "trade_id": event.trade_id,
+                    "error": str(e),
+                    "message": "Failed to decompose trade for lot tracking",
+                },
+            )
+        )
+        return outputs
+
+    # Get current mid prices for lot creation
+    open_mids = {}
+    for leg in legs:
+        rate = state.get_market_rate(leg.risk_pair)
+        if rate:
+            open_mids[leg.risk_pair] = rate.mid
+        else:
+            # Missing market rate, can't create lot
+            outputs.append(
+                OutputRecord(
+                    timestamp=event.timestamp,
+                    record_type="lot_tracking_error",
+                    data={
+                        "trade_id": event.trade_id,
+                        "risk_pair": leg.risk_pair,
+                        "error": f"Missing market rate for {leg.risk_pair}",
+                    },
+                )
+            )
+            return outputs
+
+    # Process each leg
+    for leg in legs:
+        # Get current net position before this leg
+        current_net = state.lot_manager.get_net_position(leg.risk_pair)
+
+        # Determine if this leg increases or decreases net position
+        leg_impact = leg.quantity if leg.side == Side.BUY else -leg.quantity
+        new_net = current_net + leg_impact
+
+        # Check if leg reduces position (opposite sign or moves toward zero)
+        reduces_position = (current_net > 0 and leg_impact < 0) or (  # Long position, selling
+            current_net < 0 and leg_impact > 0
+        )  # Short position, buying
+
+        if reduces_position:
+            # Match against existing lots (internalization)
+            # Pass the leg's side directly - match_lots will find opposite lots
+            matches = state.lot_manager.match_lots(
+                leg.risk_pair,
+                leg.quantity,
+                leg.side,  # Pass leg side directly
+                leg.trade_price,
+                event.timestamp,
+            )
+
+            # Create output records for matches
+            for match in matches:
+                outputs.append(
+                    OutputRecord(
+                        timestamp=event.timestamp,
+                        record_type="lot_match",
+                        data={
+                            "trade_id": event.trade_id,
+                            "lot_id": match.lot.lot_id,
+                            "risk_pair": leg.risk_pair,
+                            "matched_quantity": str(match.matched_quantity),
+                            "realized_pnl": str(match.realized_pnl),
+                            "close_price": str(match.close_price),
+                            "original_lot_side": match.lot.side.value,
+                            "original_trade_id": match.lot.originating_trade_id,
+                            "decomposition_path": leg.decomposition_path,
+                        },
+                    )
+                )
+
+            # If not fully matched, create lot for remainder
+            matched_total = sum(m.matched_quantity for m in matches)
+            if matched_total < leg.quantity:
+                remainder = leg.quantity - matched_total
+                lots = decomposer.legs_to_lots(
+                    [leg],
+                    event.trade_id,
+                    event.timestamp,
+                    open_mids,
+                )
+                for lot in lots:
+                    # Adjust quantity to remainder
+                    adjusted_lot = replace(
+                        lot,
+                        quantity=remainder,
+                        original_quantity=remainder,
+                    )
+                    state.lot_manager.add_lot(adjusted_lot)
+
+                    outputs.append(
+                        OutputRecord(
+                            timestamp=event.timestamp,
+                            record_type="lot_created",
+                            data={
+                                "trade_id": event.trade_id,
+                                "lot_id": adjusted_lot.lot_id,
+                                "risk_pair": adjusted_lot.risk_pair,
+                                "side": adjusted_lot.side.value,
+                                "quantity": str(adjusted_lot.quantity),
+                                "trade_price": str(adjusted_lot.trade_price),
+                                "open_mid": str(adjusted_lot.open_mid),
+                                "decomposition_path": adjusted_lot.decomposition_path,
+                            },
+                        )
+                    )
+        else:
+            # Increases position - create new lot
+            lots = decomposer.legs_to_lots(
+                [leg],
+                event.trade_id,
+                event.timestamp,
+                open_mids,
+            )
+
+            for lot in lots:
+                state.lot_manager.add_lot(lot)
+
+                outputs.append(
+                    OutputRecord(
+                        timestamp=event.timestamp,
+                        record_type="lot_created",
+                        data={
+                            "trade_id": event.trade_id,
+                            "lot_id": lot.lot_id,
+                            "risk_pair": lot.risk_pair,
+                            "side": lot.side.value,
+                            "quantity": str(lot.quantity),
+                            "trade_price": str(lot.trade_price),
+                            "open_mid": str(lot.open_mid),
+                            "decomposition_path": lot.decomposition_path,
+                        },
+                    )
+                )
+
+    return outputs
 
 
 def handle_market_update(
@@ -226,6 +413,7 @@ def handle_clock_tick(
     - P&L calculation
     - Exposure calculation
     - Risk metrics
+    - Lot tracking metrics (if enabled)
 
     Updates:
     - None (read-only snapshot)
@@ -251,18 +439,37 @@ def handle_clock_tick(
             # If conversion fails, skip (or handle differently)
             pass
 
+    # Prepare output data
+    output_data = {
+        "tick_label": event.tick_label,
+        "cash_balances": {k: str(v) for k, v in state.cash_balances.items()},
+        "positions": {k: str(v) for k, v in state.positions.items()},
+        "exposures": {k: str(v) for k, v in exposures.items()},
+        "total_equity_reporting": str(total_equity),
+        "reporting_currency": state.reporting_currency,
+        "event_count": state.event_count,
+    }
+
+    # Add lot tracking metrics if enabled
+    if state.lot_manager:
+        market_mids = {
+            pair: rate.mid for pair, rate in state.market_rates.items() if rate is not None
+        }
+        total_unrealized_pnl = state.lot_manager.compute_total_unrealized_pnl(market_mids)
+        lot_stats = state.lot_manager.get_lot_count_stats()
+        net_positions = state.lot_manager.get_all_net_positions()
+
+        output_data["lot_tracking"] = {
+            "total_unrealized_pnl": str(total_unrealized_pnl),
+            "total_open_lots": lot_stats["total_open_lots"],
+            "total_closed_lots": lot_stats["total_closed_lots"],
+            "net_positions_by_risk_pair": {k: str(v) for k, v in net_positions.items()},
+        }
+
     output = OutputRecord(
         timestamp=event.timestamp,
         record_type="clock_tick",
-        data={
-            "tick_label": event.tick_label,
-            "cash_balances": {k: str(v) for k, v in state.cash_balances.items()},
-            "positions": {k: str(v) for k, v in state.positions.items()},
-            "exposures": {k: str(v) for k, v in exposures.items()},
-            "total_equity_reporting": str(total_equity),
-            "reporting_currency": state.reporting_currency,
-            "event_count": state.event_count,
-        },
+        data=output_data,
     )
 
     return new_state, [output]

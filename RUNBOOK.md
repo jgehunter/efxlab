@@ -67,6 +67,21 @@ python -m efxlab.main generate-sample-data
 # config/default.yaml
 reporting_currency: USD
 
+# Lot tracking (optional)
+lot_tracking:
+  enabled: true
+  matching_rule: FIFO
+  risk_pairs:
+    - EUR/USD
+    - GBP/USD
+  trade_pairs:
+    - EUR/USD
+    - GBP/USD
+    - EUR/GBP  # Cross pair
+  hedge_pairs:
+    - EUR/USD
+    - GBP/USD
+
 inputs:
   directory: examples/data
   files:
@@ -134,6 +149,194 @@ copy outputs\final_state.json outputs\run2.json
 # Compare (should be identical)
 fc outputs\run1.json outputs\run2.json
 ```
+
+---
+
+## Lot Tracking Operations
+
+### Enabling Lot Tracking
+
+1. **Edit config/default.yaml:**
+   ```yaml
+   lot_tracking:
+     enabled: true
+     matching_rule: FIFO
+     risk_pairs:
+       - EUR/USD
+       - GBP/USD
+     trade_pairs:
+       - EUR/USD
+       - EUR/GBP  # Cross trades supported
+     hedge_pairs:
+       - EUR/USD
+   ```
+
+2. **Run simulation:**
+   ```powershell
+   python -m efxlab.main run --config config/default.yaml
+   ```
+
+3. **Check lot tracking output:**
+   ```powershell
+   # Count lot events
+   python -c "import json; events = [json.loads(line) for line in open('outputs/audit_log.jsonl')]; print('Lot created:', sum(1 for e in events if e['record_type'] == 'lot_created')); print('Lot matched:', sum(1 for e in events if e['record_type'] == 'lot_match'))"
+   ```
+
+### Querying Lot Data
+
+#### Extract All Lot Creations
+```python
+import json
+
+lots = []
+with open('outputs/audit_log.jsonl') as f:
+    for line in f:
+        record = json.loads(line)
+        if record['record_type'] == 'lot_created':
+            lots.append(record['data'])
+
+print(f"Total lots created: {len(lots)}")
+for lot in lots[:5]:  # First 5
+    print(f"{lot['lot_id']}: {lot['side']} {lot['quantity']} {lot['currency_pair']} @ {lot['entry_price']}")
+```
+
+#### Calculate Realized P&L from Lot Matches
+```python
+import json
+from decimal import Decimal
+
+total_pnl = Decimal("0")
+matches = []
+
+with open('outputs/audit_log.jsonl') as f:
+    for line in f:
+        record = json.loads(line)
+        if record['record_type'] == 'lot_match':
+            matches.append(record['data'])
+            total_pnl += Decimal(record['data']['realized_pnl'])
+
+print(f"Total matches: {len(matches)}")
+print(f"Total realized P&L: {total_pnl}")
+```
+
+#### Analyze Lot Holding Periods
+```python
+import json
+from datetime import datetime
+from collections import defaultdict
+
+lots = {}
+hold_times = []
+
+with open('outputs/audit_log.jsonl') as f:
+    for line in f:
+        record = json.loads(line)
+        
+        if record['record_type'] == 'lot_created':
+            lot_id = record['data']['lot_id']
+            lots[lot_id] = {
+                'created': datetime.fromisoformat(record['timestamp']),
+                'pair': record['data']['currency_pair']
+            }
+        
+        elif record['record_type'] == 'lot_match':
+            lot_id = record['data']['matched_lot_id']
+            if lot_id in lots:
+                matched_time = datetime.fromisoformat(record['timestamp'])
+                hold_seconds = (matched_time - lots[lot_id]['created']).total_seconds()
+                hold_times.append(hold_seconds)
+                print(f"{lot_id}: held {hold_seconds/3600:.2f} hours")
+
+if hold_times:
+    print(f"\nAverage hold time: {sum(hold_times)/len(hold_times)/3600:.2f} hours")
+```
+
+### Monitoring Lot Tracking
+
+#### Check Lot Tracking Stats in Snapshots
+```python
+import duckdb
+
+df = duckdb.query("""
+    SELECT 
+        tick_label,
+        json_extract(lot_tracking_stats, '$.total_open_lots') as open_lots,
+        json_extract(lot_tracking_stats, '$.total_closed_lots') as closed_lots,
+        json_extract(lot_tracking_stats, '$.total_unrealized_pnl') as unrealized_pnl
+    FROM read_parquet('outputs/snapshots.parquet')
+    WHERE lot_tracking_stats IS NOT NULL
+    ORDER BY timestamp
+""").df()
+
+print(df)
+```
+
+### Troubleshooting Lot Tracking
+
+#### Problem: No lot events in audit log
+
+**Check 1: Is lot tracking enabled?**
+```powershell
+python -c "import yaml; config = yaml.safe_load(open('config/default.yaml')); print('Enabled:', config.get('lot_tracking', {}).get('enabled', False))"
+```
+
+**Check 2: Are risk pairs configured?**
+```powershell
+python -c "import yaml; config = yaml.safe_load(open('config/default.yaml')); print('Risk pairs:', config.get('lot_tracking', {}).get('risk_pairs', []))"
+```
+
+**Check 3: Are trades in configured pairs?**
+```python
+import duckdb
+
+trades = duckdb.query("""
+    SELECT DISTINCT currency_pair
+    FROM read_parquet('examples/data/client_trades.parquet')
+""").df()
+
+print("Trade pairs in data:", trades['currency_pair'].tolist())
+```
+
+#### Problem: lot_tracking_error in audit log
+
+```python
+import json
+
+errors = []
+with open('outputs/audit_log.jsonl') as f:
+    for line in f:
+        record = json.loads(line)
+        if record['record_type'] == 'lot_tracking_error':
+            errors.append(record['data'])
+
+for error in errors:
+    print(f"Error: {error['error']}")
+    print(f"Trade: {error.get('trade_id', 'unknown')}")
+```
+
+**Common causes:**
+- Missing market rates for decomposition (EUR/GBP needs EUR/USD and GBP/USD rates)
+- Invalid currency pair format
+- Negative quantities after matching
+
+#### Problem: Memory usage high with lot tracking
+
+**Check open lot count:**
+```python
+import json
+
+with open('outputs/final_state.json') as f:
+    state = json.load(f)
+    
+if 'lot_tracking_stats' in state:
+    print(f"Open lots: {state['lot_tracking_stats']['total_open_lots']}")
+    print(f"Closed lots: {state['lot_tracking_stats']['total_closed_lots']}")
+```
+
+**Mitigation:**
+- Reduce simulation time window
+- Disable lot tracking if not needed for analysis
+- Use clock ticks to snapshot and reset lots (future feature)
 
 ---
 

@@ -6,9 +6,12 @@ Maintains all simulation state with proper accounting primitives.
 
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
-from typing import Dict
+from typing import Dict, TYPE_CHECKING
 
 from efxlab.events import Side
+
+if TYPE_CHECKING:
+    from efxlab.lot_manager import LotManager
 
 
 @dataclass(frozen=True)
@@ -48,6 +51,9 @@ class EngineState:
 
     # Market data cache
     market_rates: Dict[str, MarketRate] = field(default_factory=dict)
+
+    # Lot tracking (optional)
+    lot_manager: "LotManager | None" = None
 
     # Configuration
     reporting_currency: str = "USD"
@@ -137,7 +143,7 @@ class EngineState:
 
     def to_dict(self) -> Dict:
         """Convert state to dictionary for serialization."""
-        return {
+        result = {
             "cash_balances": {k: str(v) for k, v in self.cash_balances.items()},
             "positions": {k: str(v) for k, v in self.positions.items()},
             "exposures": {k: str(v) for k, v in self.compute_exposures().items()},
@@ -149,6 +155,9 @@ class EngineState:
             "last_timestamp": self.last_timestamp,
             "event_count": self.event_count,
         }
+        if self.lot_manager:
+            result["lot_tracking"] = self.lot_manager.to_dict()
+        return result
 
 
 def apply_trade(

@@ -3,6 +3,32 @@
 # Reporting currency for P&L calculation
 reporting_currency: USD
 
+# Lot tracking configuration (optional)
+lot_tracking:
+  enabled: true
+  matching_rule: FIFO  # FIFO, LIFO, or OPTIMIZED
+  risk_pairs:
+    - EUR/USD
+    - GBP/USD
+    - JPY/USD
+    - AUD/USD
+    - CHF/USD
+  trade_pairs:
+    - EUR/USD
+    - GBP/USD
+    - JPY/USD
+    - AUD/USD
+    - CHF/USD
+    - EUR/GBP  # Cross
+    - EUR/JPY  # Cross
+    - GBP/JPY  # Cross
+  hedge_pairs:
+    - EUR/USD
+    - GBP/USD
+    - JPY/USD
+    - AUD/USD
+    - CHF/USD
+
 # Input event files
 inputs:
   directory: examples/data
