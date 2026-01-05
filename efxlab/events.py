@@ -33,7 +33,7 @@ class Side(Enum):
 class BaseEvent:
     """
     Base event with fields required for deterministic ordering.
-    
+
     Events are ordered by (timestamp, sequence_id). The sequence_id ensures
     stable ordering when multiple events share the same timestamp.
     """
@@ -45,23 +45,23 @@ class BaseEvent:
     def __post_init__(self) -> None:
         if self.sequence_id < 0:
             raise ValueError(f"sequence_id must be non-negative, got {self.sequence_id}")
-    
+
     def __lt__(self, other: Any) -> bool:
         """Compare events for sorting by timestamp and sequence_id."""
         if not isinstance(other, BaseEvent):
             return NotImplemented
         return (self.timestamp, self.sequence_id) < (other.timestamp, other.sequence_id)
-    
+
     def __le__(self, other: Any) -> bool:
         if not isinstance(other, BaseEvent):
             return NotImplemented
         return (self.timestamp, self.sequence_id) <= (other.timestamp, other.sequence_id)
-    
+
     def __gt__(self, other: Any) -> bool:
         if not isinstance(other, BaseEvent):
             return NotImplemented
         return (self.timestamp, self.sequence_id) > (other.timestamp, other.sequence_id)
-    
+
     def __ge__(self, other: Any) -> bool:
         if not isinstance(other, BaseEvent):
             return NotImplemented
@@ -72,9 +72,9 @@ class BaseEvent:
 class ClientTradeEvent(BaseEvent):
     """
     Client trade execution event.
-    
+
     Represents a trade with a client. Updates cash and positions.
-    
+
     Example: Client buys 1M EUR/USD at 1.1000
         - currency_pair: "EUR/USD"
         - side: BUY (desk sells EUR to client, receives USD)
@@ -104,7 +104,7 @@ class ClientTradeEvent(BaseEvent):
 class MarketUpdateEvent(BaseEvent):
     """
     Market data update event.
-    
+
     Updates bid/ask prices for a currency pair. Used for:
     - Mark-to-market position valuation
     - Currency conversion
@@ -130,7 +130,7 @@ class MarketUpdateEvent(BaseEvent):
 class ConfigUpdateEvent(BaseEvent):
     """
     Configuration change event.
-    
+
     Updates simulation parameters dynamically (e.g., reporting currency,
     hedging thresholds). Allows testing different strategies on same data.
     """
@@ -148,7 +148,7 @@ class ConfigUpdateEvent(BaseEvent):
 class HedgeOrderEvent(BaseEvent):
     """
     Hedge order placement event.
-    
+
     Intent to hedge exposure. Does not affect state until corresponding
     HedgeFillEvent is processed.
     """
@@ -171,7 +171,7 @@ class HedgeOrderEvent(BaseEvent):
 class HedgeFillEvent(BaseEvent):
     """
     Hedge execution event.
-    
+
     Confirms hedge order execution. Updates cash and positions like client trade,
     but may include slippage/fees for realism.
     """
@@ -195,7 +195,7 @@ class HedgeFillEvent(BaseEvent):
 class ClockTickEvent(BaseEvent):
     """
     Periodic clock tick for snapshots and metric calculation.
-    
+
     Triggers:
     - State snapshot for time-series output
     - P&L calculation

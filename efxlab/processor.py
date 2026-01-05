@@ -33,7 +33,7 @@ logger = structlog.get_logger()
 class EventProcessor:
     """
     Deterministic event processor.
-    
+
     Processes events in strict order, maintaining state transitions.
     """
 
@@ -44,10 +44,10 @@ class EventProcessor:
     def process_event(self, event: BaseEvent) -> None:
         """
         Process a single event through appropriate handler.
-        
+
         Args:
             event: Event to process
-        
+
         Raises:
             ValueError: If event type is unknown
         """
@@ -96,13 +96,13 @@ class EventProcessor:
     def process_events(self, events: List[BaseEvent]) -> EngineState:
         """
         Process a list of events in order.
-        
+
         Events are assumed to be already sorted. This method processes them
         sequentially and returns the final state.
-        
+
         Args:
             events: List of events (must be sorted)
-        
+
         Returns:
             Final engine state
         """

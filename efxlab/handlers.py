@@ -31,14 +31,16 @@ class OutputRecord:
     data: Dict[str, Any]
 
 
-def handle_client_trade(state: EngineState, event: ClientTradeEvent) -> tuple[EngineState, List[OutputRecord]]:
+def handle_client_trade(
+    state: EngineState, event: ClientTradeEvent
+) -> tuple[EngineState, List[OutputRecord]]:
     """
     Handle client trade event.
-    
+
     Updates:
     - Cash balances (desk perspective)
     - Positions
-    
+
     Outputs:
     - Trade log record
     """
@@ -80,10 +82,10 @@ def handle_market_update(
 ) -> tuple[EngineState, List[OutputRecord]]:
     """
     Handle market update event.
-    
+
     Updates:
     - Market rate cache
-    
+
     Outputs:
     - Market data record (optional, can be verbose)
     """
@@ -115,10 +117,10 @@ def handle_config_update(
 ) -> tuple[EngineState, List[OutputRecord]]:
     """
     Handle configuration update event.
-    
+
     Updates:
     - Configuration parameters
-    
+
     Outputs:
     - Config change record
     """
@@ -142,12 +144,12 @@ def handle_hedge_order(
 ) -> tuple[EngineState, List[OutputRecord]]:
     """
     Handle hedge order event.
-    
+
     Note: Order placement does not affect state (no fill yet).
-    
+
     Updates:
     - None (order intent only)
-    
+
     Outputs:
     - Order log record
     """
@@ -173,11 +175,11 @@ def handle_hedge_fill(
 ) -> tuple[EngineState, List[OutputRecord]]:
     """
     Handle hedge fill event.
-    
+
     Updates:
     - Cash balances
     - Positions
-    
+
     Outputs:
     - Fill log record
     """
@@ -218,16 +220,16 @@ def handle_clock_tick(
 ) -> tuple[EngineState, List[OutputRecord]]:
     """
     Handle clock tick event.
-    
+
     Triggers:
     - State snapshot
     - P&L calculation
     - Exposure calculation
     - Risk metrics
-    
+
     Updates:
     - None (read-only snapshot)
-    
+
     Outputs:
     - Snapshot record with all state and metrics
     """

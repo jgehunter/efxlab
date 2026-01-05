@@ -11,7 +11,7 @@ import structlog
 def configure_logging(log_level: str = "INFO", log_file: str | None = None) -> None:
     """
     Configure structured logging with structlog.
-    
+
     Args:
         log_level: Logging level (DEBUG, INFO, WARNING, ERROR)
         log_file: Optional log file path (None for stdout only)
@@ -35,9 +35,7 @@ def configure_logging(log_level: str = "INFO", log_file: str | None = None) -> N
 
     structlog.configure(
         processors=processors,
-        wrapper_class=structlog.make_filtering_bound_logger(
-            getattr(logging, log_level.upper())
-        ),
+        wrapper_class=structlog.make_filtering_bound_logger(getattr(logging, log_level.upper())),
         context_class=dict,
         logger_factory=structlog.PrintLoggerFactory(),
         cache_logger_on_first_use=True,

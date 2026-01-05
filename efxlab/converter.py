@@ -18,7 +18,7 @@ class ConversionError(Exception):
 class CurrencyConverter:
     """
     Interface for converting between currencies using market rates.
-    
+
     Handles:
     - Direct pairs (EUR/USD for EUR->USD)
     - Inverse pairs (EUR/USD for USD->EUR)
@@ -33,16 +33,16 @@ class CurrencyConverter:
     ) -> Decimal:
         """
         Convert amount from one currency to another.
-        
+
         Args:
             amount: Amount to convert
             from_currency: Source currency
             to_currency: Target currency
             use_mid: Use mid rate (True) or consider bid/ask (False)
-        
+
         Returns:
             Converted amount
-        
+
         Raises:
             ConversionError: If conversion is not possible
         """
@@ -92,6 +92,4 @@ class CurrencyConverter:
                 raise ConversionError(f"Cannot divide by zero rate for {inverse_pair}")
             return Decimal("1") / rate.mid
 
-        raise ConversionError(
-            f"No market rate available for {from_currency}/{to_currency}"
-        )
+        raise ConversionError(f"No market rate available for {from_currency}/{to_currency}")

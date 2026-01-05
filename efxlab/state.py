@@ -24,21 +24,21 @@ class MarketRate:
 class EngineState:
     """
     Complete simulation state.
-    
+
     Immutable state object ensures determinism and enables time-travel debugging.
     All financial values use Decimal for exact arithmetic.
-    
+
     Cash balances: {currency: amount}
         - Positive: we have that currency
         - Negative: we owe that currency (credit facility)
-    
+
     Positions: {currency_pair: signed_notional}
         - Positive: long base currency (bought base, sold quote)
         - Negative: short base currency (sold base, bought quote)
         - Uses base currency notional amount
-    
+
     Exposures: computed on-demand from positions
-    
+
     Market cache: latest rates for each pair (for conversions and P&L)
     """
 
@@ -97,18 +97,16 @@ class EngineState:
 
     def increment_event_count(self, timestamp: str) -> "EngineState":
         """Return new state with incremented event count."""
-        return replace(
-            self, event_count=self.event_count + 1, last_timestamp=timestamp
-        )
+        return replace(self, event_count=self.event_count + 1, last_timestamp=timestamp)
 
     def compute_exposures(self) -> Dict[str, Decimal]:
         """
         Compute net exposure by currency from positions.
-        
+
         For each position in a currency pair (e.g., EUR/USD):
         - Positive position = long base (EUR), short quote (USD)
         - Negative position = short base (EUR), long quote (USD)
-        
+
         Returns: {currency: net_exposure_amount}
         """
         exposures: Dict[str, Decimal] = {}
@@ -162,18 +160,18 @@ def apply_trade(
 ) -> EngineState:
     """
     Apply a trade to state (client or hedge).
-    
+
     Desk perspective:
     - Client BUY: desk sells base, receives quote (negative base, positive quote)
     - Client SELL: desk buys base, pays quote (positive base, negative quote)
-    
+
     Args:
         state: Current state
         currency_pair: e.g., "EUR/USD"
         side: BUY or SELL (client side)
         notional: Amount in base currency
         price: Quote per unit base
-    
+
     Returns:
         New state with updated cash and positions
     """

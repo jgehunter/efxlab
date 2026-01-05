@@ -24,7 +24,7 @@ from efxlab.state import EngineState
 def test_complete_simulation_scenario():
     """
     Test a complete day of FX trading simulation.
-    
+
     Scenario:
     1. Market opens with initial rates
     2. Multiple client trades throughout the day
@@ -147,25 +147,25 @@ def test_complete_simulation_scenario():
     # Check positions
     # EUR/USD: -1M (client buy) + 500K (client sell) = -500K
     assert final_state.get_position("EUR/USD") == Decimal("-500000")
-    
+
     # GBP/USD: -750K (client buy)
     assert final_state.get_position("GBP/USD") == Decimal("-750000")
 
     # Check cash balances
     # EUR: -1M + 500K = -500K
     assert final_state.get_cash_balance("EUR") == Decimal("-500000")
-    
+
     # USD: +1.1M (trade1) - 552.5K (trade2) + 952.5K (trade3)
     expected_usd = Decimal("1100000") - Decimal("552500") + Decimal("952500")
     assert final_state.get_cash_balance("USD") == expected_usd
-    
+
     # GBP: -750K
     assert final_state.get_cash_balance("GBP") == Decimal("-750000")
 
     # Check output records
     records = processor.get_output_records()
     assert len(records) == len(events)
-    
+
     # Verify we have expected record types
     record_types = [r.record_type for r in records]
     assert record_types.count("market_update") == 3
@@ -180,11 +180,11 @@ def test_complete_simulation_scenario():
 def test_deterministic_rerun():
     """
     Test that running the same events twice produces identical results.
-    
+
     This is critical for reproducibility.
     """
     base_time = datetime(2025, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
-    
+
     events = [
         MarketUpdateEvent(
             timestamp=base_time,
@@ -242,7 +242,7 @@ def test_deterministic_rerun():
 def test_exposure_calculation_integration():
     """Test exposure calculation in realistic scenario."""
     base_time = datetime(2025, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
-    
+
     events = [
         # Set up market rates
         MarketUpdateEvent(
@@ -283,7 +283,7 @@ def test_exposure_calculation_integration():
 
     # Desk sold 1M EUR to client, so desk is short 1M EUR
     assert exposures["EUR"] == Decimal("-1000000")
-    
+
     # Desk received 1.1M USD, so desk is long 1.1M USD (from position perspective)
     assert exposures["USD"] == Decimal("1100000")
 

@@ -101,11 +101,11 @@ CLOCK_TICK_SCHEMA = pa.schema(
 def load_events_from_parquet(file_path: Path, event_type: EventType) -> List[BaseEvent]:
     """
     Load events from a Parquet file.
-    
+
     Args:
         file_path: Path to Parquet file
         event_type: Type of events in the file
-    
+
     Returns:
         List of event objects
     """
@@ -198,10 +198,10 @@ def load_events_from_parquet(file_path: Path, event_type: EventType) -> List[Bas
 def load_and_merge_events(event_files: Dict[EventType, Path]) -> List[BaseEvent]:
     """
     Load events from multiple files and merge into single sorted list.
-    
+
     Args:
         event_files: Mapping of event types to file paths
-    
+
     Returns:
         Sorted list of all events
     """
@@ -212,7 +212,9 @@ def load_and_merge_events(event_files: Dict[EventType, Path]) -> List[BaseEvent]
             events = load_events_from_parquet(file_path, event_type)
             all_events.extend(events)
         else:
-            logger.warning("event_file_not_found", event_type=event_type.value, file_path=str(file_path))
+            logger.warning(
+                "event_file_not_found", event_type=event_type.value, file_path=str(file_path)
+            )
 
     # Sort events deterministically
     all_events.sort()  # Uses BaseEvent.__lt__ (timestamp, sequence_id)
@@ -224,7 +226,7 @@ def load_and_merge_events(event_files: Dict[EventType, Path]) -> List[BaseEvent]
 def write_output_records_jsonl(records: List[OutputRecord], output_path: Path) -> None:
     """
     Write output records to JSONL file (append-only log).
-    
+
     Args:
         records: List of output records
         output_path: Path to output file
@@ -248,9 +250,9 @@ def write_output_records_jsonl(records: List[OutputRecord], output_path: Path) -
 def write_snapshots_parquet(records: List[OutputRecord], output_path: Path) -> None:
     """
     Write clock tick snapshots to Parquet (for analytics).
-    
+
     Only includes clock_tick records.
-    
+
     Args:
         records: List of output records
         output_path: Path to output file
@@ -287,7 +289,7 @@ def write_snapshots_parquet(records: List[OutputRecord], output_path: Path) -> N
 def write_state_snapshot(state: Any, output_path: Path) -> None:
     """
     Write final state to JSON file.
-    
+
     Args:
         state: Engine state (must have to_dict method)
         output_path: Path to output file
